@@ -7,13 +7,19 @@ def generate_clause(n, k):
     clause = [str(x) if random.random() > 0.5 else "-" + str(x) for x in clause]
     return clause
 
+def negate_clause(clause_str):
+    literals = clause_str.split()
+    negated_literals = ["-"+literal if literal[0] != "-" else literal[1:] for literal in literals]
+    return " ".join(negated_literals)
+
 def generate_knf(n, c, k):
     knf = "p cnf {} {}\n".format(n, c)
     clauses = set()
     while len(clauses) < c:
         clause = generate_clause(n, k)
-        clause_str = " ".join(clause)
-        if clause_str not in clauses and "-"+clause_str not in clauses:
+        clause_str = " ".join(sorted(clause))
+        negated_clause_str = negate_clause(clause_str)
+        if clause_str not in clauses and negated_clause_str not in clauses:
             clauses.add(clause_str)
             knf += clause_str + "\n"
     return knf
