@@ -21,7 +21,7 @@ def generate_knf(n, c, k):
         negated_clause_str = negate_clause(clause_str)
         if clause_str not in clauses and negated_clause_str not in clauses:
             clauses.add(clause_str)
-            knf += clause_str + "\n"
+            knf += clause_str + " 0\n"
     return knf
 
 def save_to_file(content, filename):
