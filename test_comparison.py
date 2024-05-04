@@ -2,6 +2,7 @@ import subprocess
 import argparse
 import time
 import sys
+import os
 
 def run_cadical():
     start_time = time.time()
@@ -42,4 +43,5 @@ if __name__ == "__main__":
     print("All tests passed")
     print("Time spent in Cadical: ", statTimeCad, "s")
     print("Time spent in Solver: ", statTimeSolver, "s")
+    os.remove("output.cnf")
         
