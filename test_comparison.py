@@ -16,6 +16,10 @@ def run_solver(solver_path):
     end_time = time.time()
     return result, end_time - start_time
 
+def run_drat_trim():
+    result = subprocess.call(["./Submodules/drat-trim/drat-trim", "output.cnf", "unsat.drat"], stdout=subprocess.DEVNULL)
+    return result
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run CaDiCaL and custom solver with a CNF file')
     parser.add_argument('--solver', '-s', required=True, help='Path to custom solver script')
@@ -26,7 +30,7 @@ if __name__ == "__main__":
     statTimeSolver = 0
     
     for i in range(args.tries):
-        subprocess.run(['python3', 'abgabe1/knf_gen.py', str(args.n), str(round(4 * int(args.n))), "3"], stdout=subprocess.DEVNULL)
+        subprocess.run(['python3', 'abgabe1/knf_gen.py', str(args.n), str(round(3.8 * int(args.n))), "3"], stdout=subprocess.DEVNULL)
         resultCad, timeCad = run_cadical()
         statTimeCad += timeCad
         resultSolver, timeSolver = run_solver(args.solver)
@@ -39,6 +43,13 @@ if __name__ == "__main__":
             print("Cadical: ", resultCad)
             print("Solver: ", resultSolver)
             sys.exit(1)
+            
+        if 'cdcl.py' in args.solver:
+            resultDrat = run_drat_trim()
+            if resultDrat != 0:
+                print()
+                print(f"Error: {args.solver} did not produce a correct proof")
+                sys.exit(1)
             
     print("All tests passed")
     print("Time spent in Cadical: ", statTimeCad, "s")

@@ -10,7 +10,7 @@ class DPLL_Solver:
         self.pure_literal_eliminations = 0
 
     def complete_unit_propagation(self, cnf, v):
-        for clause in cnf.copy():  
+        for clause in cnf:  
             unassigned_literal = None
             num_unassigned = 0
 
@@ -27,8 +27,7 @@ class DPLL_Solver:
             if num_unassigned == 1:
                 v.add(unassigned_literal)
                 self.unit_propagations += 1
-                self.complete_unit_propagation(cnf, v)  
-                break
+                continue
     
         return v
 
