@@ -17,7 +17,7 @@ def run_solver(solver_path):
     return result, end_time - start_time
 
 def run_drat_trim():
-    result = subprocess.call(["./Submodules/drat-trim/drat-trim", "output.cnf", "unsat.drat"], stdout=subprocess.DEVNULL)
+    result = subprocess.call(["./drat-trim/drat-trim", "output.cnf", "unsat.drat"], stdout=subprocess.DEVNULL)
     return result
 
 if __name__ == "__main__":
@@ -44,7 +44,7 @@ if __name__ == "__main__":
             print("Solver: ", resultSolver)
             sys.exit(1)
             
-        if 'cdcl.py' in args.solver:
+        if 'cdcl.py' in args.solver and resultCad == 20:
             resultDrat = run_drat_trim()
             if resultDrat != 0:
                 print()
@@ -55,4 +55,5 @@ if __name__ == "__main__":
     print("Time spent in Cadical: ", statTimeCad, "s")
     print("Time spent in Solver: ", statTimeSolver, "s")
     os.remove("output.cnf")
+    os.remove("unsat.drat")
         

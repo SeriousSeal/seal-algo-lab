@@ -4,3 +4,4 @@
 [submodule "drat-trim"]
 	path = drat-trim
 	url = https://github.com/marijnheule/drat-trim
+	ignore = dirty
