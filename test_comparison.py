@@ -55,5 +55,6 @@ if __name__ == "__main__":
     print("Time spent in Cadical: ", statTimeCad, "s")
     print("Time spent in Solver: ", statTimeSolver, "s")
     os.remove("output.cnf")
-    os.remove("unsat.drat")
+    if os.path.exists("unsat.drat"):
+        os.remove("unsat.drat")
         

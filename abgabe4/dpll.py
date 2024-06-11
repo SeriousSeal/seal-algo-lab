@@ -9,71 +9,71 @@ class DPLL_Solver:
         self.decisions = 0
         self.pure_literal_eliminations = 0
 
-    def complete_unit_propagation(self, cnf, v):
+    def complete_unit_propagation(self, cnf, assignment):
         for clause in cnf:  
             unassigned_literal = None
             num_unassigned = 0
 
             for literal in clause:
-                if literal in v:
+                if literal in assignment:
                     num_unassigned = 0
                     break
-                if -literal in v:
+                if -literal in assignment:
                     continue
                 
                 unassigned_literal = literal
                 num_unassigned += 1
         
             if num_unassigned == 1:
-                v.add(unassigned_literal)
+                assignment.add(unassigned_literal)
                 self.unit_propagations += 1
                 continue
     
-        return v
+        return assignment
 
-    def pure_literal_elimination(self, cnf, v):
+    def pure_literal_elimination(self, cnf, assignment):
         if not self.flagPureLiteralElimination:
             return
-        unassigned_literals = {literal for clause in cnf for literal in clause if literal not in v and -literal not in v}
+        unassigned_literals = {literal for clause in cnf for literal in clause if literal not in assignment and -literal not in assignment}
         for literal in unassigned_literals:
             if -literal not in unassigned_literals:
-                v.add(literal)
+                assignment.add(literal)
                 self.pure_literal_eliminations += 1
 
-    def get_decision_variable(self, cnf, v):
+    def get_decision_variable(self, cnf, assignment):
         self.decisions += 1
         all_literals = {literal for clause in cnf for literal in clause}
-        unassigned_literals = all_literals - v - {-literal for literal in v}
+        unassigned_literals = all_literals - assignment - {-literal for literal in assignment}
         return next(iter(unassigned_literals))
 
-    def is_finished(self, cnf, v):
+    def is_finished(self, cnf, assignment):
         for clause in cnf:
-            if all(-literal in v for literal in clause):
+            if all(-literal in assignment for literal in clause):
                 return -1 
-            if any(literal in v for literal in clause):
+            if any(literal in assignment for literal in clause):
                 continue  
             return 0 
         return 1 
 
-    def DPLL(self, cnf, v=set()):
+    def DPLL(self, cnf, assignment=set()):
         while True:
-            before_len = len(v)
-            self.pure_literal_elimination(cnf, v)
-            self.complete_unit_propagation(cnf, v)
-            if len(v) == before_len:
+            before_len = len(assignment)
+            self.pure_literal_elimination(cnf, assignment)
+            self.complete_unit_propagation(cnf, assignment)
+            if len(assignment) == before_len:
                 break  
         
-        finished = self.is_finished(cnf, v)
+        finished = self.is_finished(cnf, assignment)
         if finished == 1:
-            return True, v
+            return True, assignment
         elif finished == -1:
             return False, None
         
-        x = self.get_decision_variable(cnf, v)
-        res_neg = self.DPLL(cnf, v | {-x})  
+        x = self.get_decision_variable(cnf, assignment)
+        res_neg = self.DPLL(cnf, assignment | {-x})  
         if res_neg[0]:
             return res_neg
-        return self.DPLL(cnf, v | {x}) 
+        return self.DPLL(cnf, assignment | {x}) 
     
     def read_cnf(self, filename: str) -> set[frozenset[int]]:
         cnf = set()
