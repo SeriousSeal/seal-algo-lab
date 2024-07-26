@@ -1,4 +1,5 @@
 import argparse
+import logging
 import time
 import resource
 
@@ -9,7 +10,12 @@ class DPLL_Solver:
         self.decisions = 0
         self.pure_literal_eliminations = 0
 
-    def complete_unit_propagation(self, cnf, assignment):
+    def unit_propagation(self, cnf, assignment):
+        """
+        Performs unit propagation on the given CNF formula and assignment.
+        It iterates through each clause and checks if there is only one unassigned literal.
+        If so, it assigns that literal to the assignment set and increments the unit_propagations counter.
+        """
         for clause in cnf:  
             unassigned_literal = None
             num_unassigned = 0
@@ -32,21 +38,51 @@ class DPLL_Solver:
         return assignment
 
     def pure_literal_elimination(self, cnf, assignment):
+        """
+        Performs pure literal elimination on the given CNF formula and assignment.
+        It first collects all literals and their negations in the formula.
+        Then, it checks if a literal and its negation are both not present in the assignment.
+        If so, it adds the pure literal to the assignment and increments the pure_literal_eliminations counter.
+        """
         if not self.flagPureLiteralElimination:
             return
-        unassigned_literals = {literal for clause in cnf for literal in clause if literal not in assignment and -literal not in assignment}
-        for literal in unassigned_literals:
-            if -literal not in unassigned_literals:
+        literals = set()
+        literal_negations = {}
+    
+        # Collect all literals and their negations
+        for clause in cnf:
+            if not any(literal in assignment for literal in clause):
+                for literal in clause:
+                    literals.add(literal)
+                    literal_negations[literal] = -literal
+    
+        # Process the literals
+        for literal in literals:
+            if literal_negations[literal] in assignment:
+                continue
+            if literal_negations[literal] not in literals:
                 assignment.add(literal)
                 self.pure_literal_eliminations += 1
+    
+        return assignment
 
     def get_decision_variable(self, cnf, assignment):
+        """
+        Selects the next decision variable for the DPLL algorithm.
+        It keeps track of the number of decisions made using the decisions counter.
+        """
         self.decisions += 1
         all_literals = {literal for clause in cnf for literal in clause}
         unassigned_literals = all_literals - assignment - {-literal for literal in assignment}
         return next(iter(unassigned_literals))
 
     def is_finished(self, cnf, assignment):
+        """
+        Checks the current state of the CNF formula and assignment:
+        - Returns 1 if the formula is satisfiable
+        - Returns -1 if the formula is unsatisfiable
+        - Returns 0 if the formula is not yet finished
+        """
         for clause in cnf:
             if all(-literal in assignment for literal in clause):
                 return -1 
@@ -56,10 +92,16 @@ class DPLL_Solver:
         return 1 
 
     def DPLL(self, cnf, assignment=set()):
+        """
+        Implements the DPLL algorithm to solve the given CNF formula.
+        It first performs unit propagation and pure literal elimination until no more can be done.
+        Then, it checks if the formula is satisfiable, unsatisfiable, or still needs more decisions.
+        If more decisions are needed, it recursively calls the DPLL function with the new assignment.
+        """
         while True:
             before_len = len(assignment)
             self.pure_literal_elimination(cnf, assignment)
-            self.complete_unit_propagation(cnf, assignment)
+            self.unit_propagation(cnf, assignment)
             if len(assignment) == before_len:
                 break  
         
@@ -76,6 +118,10 @@ class DPLL_Solver:
         return self.DPLL(cnf, assignment | {x}) 
     
     def read_cnf(self, filename: str) -> set[frozenset[int]]:
+        """
+        Reads a CNF formula from the given file and returns it as a set of frozen sets of integers.
+        Each frozen set represents a clause, and the set contains all the clauses.
+        """
         cnf = set()
         with open(filename, "r") as f:
             lines = f.readlines()
@@ -95,10 +141,11 @@ class DPLL_Solver:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Implements DPLL Algorithm')
+    parser.add_argument('--pure', '-p', action='store_true', help='Enable Pure Literal Elimination')
     parser.add_argument('--input', '-i', default='input.cnf', help='Input file name (default: input.cnf)')
     args = parser.parse_args()
-    
-    solver = DPLL_Solver(True)
+
+    solver = DPLL_Solver(args.pure)
     statTimeStart = time.time()
     cnf = solver.read_cnf(args.input)
     sat, v = solver.DPLL(cnf)

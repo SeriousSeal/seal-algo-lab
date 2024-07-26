@@ -10,10 +10,24 @@ def run_cadical():
     end_time = time.time()
     return result, end_time - start_time
 
+
 def run_solver(solver_path):
-    start_time = time.time()    
-    result = subprocess.call(['python3', solver_path, "--input",  "output.cnf"], stdout=subprocess.DEVNULL)
+    cmd = ['python3', solver_path, "--input", "output.cnf"]
+    
+    if('cdcl.py' in solver_path):
+        cmd.append('--vsids')
+        cmd.append('--restarts')
+        cmd.append('--learn')
+        cmd.append('--delete')
+        cmd.append('--minimize')
+        
+    elif('dpll.py' in solver_path):
+        cmd.append('--pure')
+        
+    start_time = time.time()
+    result = subprocess.call(cmd, stdout=subprocess.DEVNULL)
     end_time = time.time()
+    
     return result, end_time - start_time
 
 def run_drat_trim():
@@ -25,12 +39,25 @@ if __name__ == "__main__":
     parser.add_argument('--solver', '-s', required=True, help='Path to custom solver script')
     parser.add_argument('-n', type=int, default=10, help='Number of variables (default: 10)')
     parser.add_argument('--tries', '-t', type=int, default=10, help='Number of tries (default: 10)')
+    parser.add_argument('--generator', '-g', type=str, default="r", help='php=PHP,r=RANDOM, peb=PEBBLING (default: random)')
     args = parser.parse_args()
     statTimeCad = 0
     statTimeSolver = 0
     
+    
     for i in range(args.tries):
-        subprocess.run(['python3', 'abgabe1/knf_gen.py', str(args.n), str(round(3.8 * int(args.n))), "3"], stdout=subprocess.DEVNULL)
+        if(args.generator == "r"):
+            subprocess.run(['python3', 'gens/knf_gen.py', str(args.n), str(round(4.0 * int(args.n))), "3"], stdout=subprocess.DEVNULL)
+        
+        elif(args.generator == "php"):
+            subprocess.run(['python3', 'gens/php.py', str(args.n)], stdout=subprocess.DEVNULL)
+        
+        elif(args.generator == "peb"):
+            subprocess.run(['python3', 'gens/pebbling.py', str(args.n)], stdout=subprocess.DEVNULL)
+        else:
+            print("Invalid generator")
+            sys.exit(1)
+        
         resultCad, timeCad = run_cadical()
         statTimeCad += timeCad
         resultSolver, timeSolver = run_solver(args.solver)
