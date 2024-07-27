@@ -46,6 +46,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     solvers = {
+        
+        'dp': []   ,
         'cdcl': [
             ('--vsids', 'VSIDS Heuristic'),
             ('--restarts', 'Restarts'),
@@ -55,10 +57,13 @@ if __name__ == "__main__":
         ],
         'dpll': [
             ('--pure', 'Pure Literal Elimination')
-        ]
+        ],
     }
     
     nsolvers = {
+        'dp': {
+            'Random': [4, 8, 16, 20],
+        },
         'cdcl': {
             'Random': [4, 8, 16, 32, 64, 80, 105, 128],
             'PHP': [1, 2, 3, 4, 5, 6, 7],
@@ -68,7 +73,8 @@ if __name__ == "__main__":
             'Random': [4, 8, 16, 32, 64],
             'PHP': [1, 2, 3, 4, 5, 6, ],
             'Pebbling': [2, 3, 4, 5, 6]
-        }
+        },
+        
     }
 
     generators = {
@@ -78,8 +84,10 @@ if __name__ == "__main__":
     }
     
     run_path_dic = {
+        
+        'dp': 'abgabe3/dp.py',
         'cdcl': 'abgabe5/cdcl.py',
-        'dpll': 'abgabe4/dpll.py'
+        'dpll': 'abgabe4/dpll.py',
     }
 
     regex = re.compile(r"(c [a-zA-Z ]+:)")
@@ -116,6 +124,7 @@ if __name__ == "__main__":
 
                     result, stdout, stderr, timeSolver = run_solver(run_path, flags)
                     total_time_enabled += timeSolver
+                    
 
                     with open(f"{folder_name}/result_all_flags_enabled_{i}.txt", "w") as f:
                         f.write(f"Run {i + 1} of {tries}\n")
@@ -134,11 +143,13 @@ if __name__ == "__main__":
                     printProgressBar(i + 1, tries, prefix='Progress:', suffix='Complete', length=50)
 
                 avg_stats_enabled = {stat: stats_sum_enabled[stat] / stats_count_enabled[stat] for stat in stats_sum_enabled}
+                average_time_enabled = total_time_enabled / tries
 
                 with open(f"{folder_name}/average_results_all_flags_enabled.txt", "w") as f:
                     f.write(f"Average results over {tries} runs:\n")
                     f.write(f"All flags enabled\n")
                     f.write(f"Total Execution time: {total_time_enabled:.2f} seconds\n")
+                    f.write(f"Average Time: {average_time_enabled:.2f} seconds\n")
                     for stat in avg_stats_enabled:
                         f.write(f"Average {stat}: {avg_stats_enabled[stat]:.2f}\n")
 

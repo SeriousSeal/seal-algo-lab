@@ -171,9 +171,9 @@ This graph compares the number of decisions made by CDCL and DPLL solvers on peb
 
 
 ### Short Evaluation:
-
+- **Runtimes**: CDCL < DPLL < DP like anticipated CDCL is the fastest and DP the slowest.
 - **PHP**: Starting from \( n = 8 \), PHP runs too long in my implementation.
 - **Pebbling**: Pebbling runs significantly better with CDCL as expected in theory.
 - **DPLL**: Unexpectedly, Pure Literal Elimination makes DPLL slower, at least in my implementation.
 - **VSIDS and Restart**: These are crucial for PHP.
-- **VSIDS**: Generally, VSIDS is important, even for Random. Some runs take significantly longer when VSIDS is disabled, causing the average to spike (sometimes up to 20 times longer).
+- **VSIDS**: Generally, VSIDS is important, even for Random. Some runs take significantly longer when VSIDS is disabled, causing the average to spike (sometimes up to 20 times longer) -> very important for stability
