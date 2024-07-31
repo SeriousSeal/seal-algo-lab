@@ -4,7 +4,7 @@ Thorsten Kroehl
 
 ## Allgemeines 
  Wurde in Python 3.10.12 ( Ubuntu Standard 22.04) geschrieben. \
- Cadical Style Output Formate und Programm Exits.
+ Cadical Style Output Format und Programm Exits.
  Um die Submodules zu nutzen:
  ```
 git submodule update --init --recursive
