@@ -5,14 +5,6 @@ import time
 import os
 import re
 
-# Progress bar function
-def printProgressBar(iteration, total, prefix='', suffix='', decimals=1, length=50, fill='█', printEnd="\r"):
-    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
-    filledLength = int(length * iteration // total)
-    bar = fill * filledLength + '_' * (length - filledLength)
-    print(f'\r{prefix} {bar} {percent}% {suffix}', end=printEnd)
-    if iteration == total:
-        print()
 
 def run_solver(solver_path, flags):
     start_time = time.time()
@@ -109,7 +101,6 @@ if __name__ == "__main__":
                 total_time_enabled = 0
 
                 tries = args.tries if generator == "Random" else 1
-                printProgressBar(0, tries, prefix='Progress:', suffix='Complete', length=50)
 
                 for i in range(tries):
                     if generator == "Random":
@@ -140,7 +131,6 @@ if __name__ == "__main__":
                             stats_sum_enabled[stat] = stats_sum_enabled.get(stat, 0) + run_stats_sum[stat]
                             stats_count_enabled[stat] = stats_count_enabled.get(stat, 0) + run_stats_count[stat]
 
-                    printProgressBar(i + 1, tries, prefix='Progress:', suffix='Complete', length=50)
 
                 avg_stats_enabled = {stat: stats_sum_enabled[stat] / stats_count_enabled[stat] for stat in stats_sum_enabled}
                 average_time_enabled = total_time_enabled / tries
@@ -165,7 +155,6 @@ if __name__ == "__main__":
                     print(f"Running benchmark for solver: {solver}, generator: {generator}, n: {n}, flag off: {flag_desc}")
 
                     tries = args.tries if generator == "Random" else 1
-                    printProgressBar(0, tries, prefix='Progress:', suffix='Complete', length=50)
 
                     for i in range(tries):
                         if generator == "Random":
@@ -196,7 +185,6 @@ if __name__ == "__main__":
                                 stats_sum_disabled[stat] = stats_sum_disabled.get(stat, 0) + run_stats_sum[stat]
                                 stats_count_disabled[stat] = stats_count_disabled.get(stat, 0) + run_stats_count[stat]
 
-                        printProgressBar(i + 1, tries, prefix='Progress:', suffix='Complete', length=50)
 
                     avg_stats_disabled = {stat: stats_sum_disabled[stat] / stats_count_disabled[stat] for stat in stats_sum_disabled}
 

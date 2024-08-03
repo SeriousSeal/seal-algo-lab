@@ -1,12 +1,12 @@
 import argparse
-from collections import deque
+from collections import defaultdict, deque
 from enum import Flag, auto
 from functools import lru_cache
 import logging
-from assignments import CNF, Assignments, Literal
+from trail import CNF, Trail, Literal
 import resource
 import time
-from typing import  List, Set, Tuple, Union
+from typing import  List, Optional, Set, Tuple, Union
 import random
 import math
 import numpy as np
@@ -25,28 +25,28 @@ class VSIDSHeuristic:
         self.b = 2
         self.c = 1.05
 
-    def decide(self, assignments: Assignments) -> Literal:
+    def decide(self, trail: Trail) -> Literal:
         """Choose the next unassigned variable based on VSIDS scores."""
-        unassigned = [a for a in assignments.assignments if not a.is_assigned]
+        unassigned = [a for a in trail.trail if not a.is_assigned]
         return max(unassigned, key=lambda a: a.vsids_score).polarity if unassigned else None
 
-    def update_scores(self, assignments: Assignments, conflict_literals: Set[Literal]) -> None:
+    def update_scores(self, trail: Trail, conflict_literals: Set[Literal]) -> None:
         """Update VSIDS scores for literals involved in conflicts."""
         for literal in conflict_literals:
-            assignment = assignments.get_assignment(literal)
+            assignment = trail.get_assignment(literal)
             assignment.vsids_score += self.b
         self.b *= self.c
 
         if self.b > 10**30:
-            for assignment in assignments.assignments:
+            for assignment in trail.trail:
                 assignment.vsids_score /= self.b
             self.b = 1
 
 class RandomHeuristic:
     """Implements a random decision heuristic."""
-    def decide(self, assignments: Assignments) -> Literal:
+    def decide(self, trail: Trail) -> Literal:
         """Choose a random unassigned variable."""
-        unassigned = [a for a in assignments.assignments if not a.is_assigned]
+        unassigned = [a for a in trail.trail if not a.is_assigned]
         return random.choice(unassigned).polarity if unassigned else None
 
 class CDCLSolver:
@@ -76,26 +76,26 @@ class CDCLSolver:
         self.lbdLimit = 10
         self.lbdFactor = 1.1
 
-    def decide(self, assignments: Assignments, decision_level: int) -> None:
+    def decide(self, trail: Trail, decision_level: int) -> None:
         """Make a decision on the next variable to assign."""
         self.decisions += 1
-        literal = self.decision_heuristic.decide(assignments)
+        literal = self.decision_heuristic.decide(trail)
         if literal:
             logging.info(f"Decision at level {decision_level}: {literal}")
-            assignments.set_literal(literal, decision_level, [])
+            trail.set_literal(literal, decision_level, [])
             
-    def find_new_watch(self, clause, assignments_history):
+    def find_new_watch(self, clause, trail_history):
         """Find a new literal to watch in the clause."""
-        return next((j for j in range(2, len(clause)) if -clause[j] not in assignments_history), -1)
+        return next((j for j in range(2, len(clause)) if -clause[j] not in trail_history), -1)
 
-    def propagate(self, cnf: List[np.ndarray], assignments: Assignments, decision_level: int) -> Union[np.ndarray, None]:
+    def propagate(self, cnf: List[np.ndarray], trail: Trail, decision_level: int) -> Union[np.ndarray, None]:
         """Perform unit propagation and detect conflicts."""
-        literals_propagate = deque([assignments.assignment_history[-1]])
-        assignments_history = set(assignments.assignment_history)
+        literals_propagate = deque([trail.trail_history[-1]])
+        trail_history = set(trail.trail_history)
 
         while literals_propagate:
             literal = -literals_propagate.pop()
-            assignment = assignments.get_assignment(literal)
+            assignment = trail.get_assignment(literal)
             watched_clause_indices = assignment.retrieve_watched_clauses(literal)
 
             i = 0
@@ -111,101 +111,100 @@ class CDCLSolver:
                 other_index = 1 - own_index
                 other_literal = clause[other_index]
 
-                if other_literal in assignments:
+                if other_literal in trail:
                     i += 1
                     continue
 
-                j = self.find_new_watch(clause, assignments_history)
+                j = self.find_new_watch(clause, trail_history)
 
                 if j != -1:
                     new_literal = clause[j]
                     clause[own_index], clause[j] = clause[j], clause[own_index]
                     assignment.discard_watched_clause(clause_index, literal)
-                    assignments.get_assignment(new_literal).append_watched_clause(clause_index, new_literal)
+                    trail.get_assignment(new_literal).append_watched_clause(clause_index, new_literal)
                     watched_clause_indices.pop(i)
                 else:
-                    if -other_literal in assignments:
+                    if -other_literal in trail:
                         self.conflicts += 1
                         return clause
                     else:
                         self.unit_propagations += 1
-                        assignments.set_literal(other_literal, decision_level, clause)
+                        trail.set_literal(other_literal, decision_level, clause)
                         literals_propagate.append(other_literal)
-                        assignments_history.add(other_literal)
+                        trail_history.add(other_literal)
                     i += 1
 
         return None
 
-    def analyzeConflict(self, assignments: 'Assignments', conflict: List[int], decision_level: int) -> Tuple[List[int], int]:
-        """Analyze a conflict and learn a new clause."""
-        previous_level_literals: Set[Tuple[int, int]] = set()
-        current_level_literals: Set[int] = set()
-        all_literals: Set[int] = set()
+    def analyze_conflict(self, trail: Trail, conflict: List[int], decision_level: int) -> Tuple[List[int], int]:
+        """Investigate a conflict and derive a new clause."""
+        lower_level_vars = set()
+        current_level_vars = set()
+        all_vars = set()
 
-        for literal in conflict:
-            assignment = assignments.get_assignment(literal)
-            level = assignment.decision_level
-            if level == decision_level:
-                current_level_literals.add(-literal)
+        for var in conflict:
+            assign = trail.get_assignment(var)
+            if assign.decision_level == decision_level:
+                current_level_vars.add(-var)
             else:
-                previous_level_literals.add((-literal, level))
-            all_literals.add(-literal)
+                lower_level_vars.add((-var, assign.decision_level))
+            all_vars.add(-var)
 
-        if SolverOptions.CLAUSE_LEARNING in self.options:
-            self._analyze_current_level(assignments, current_level_literals, previous_level_literals, all_literals, decision_level)
-        else:
-            self._analyze_decision_literal(assignments, current_level_literals, previous_level_literals, all_literals, decision_level)
+        investigate = (self._investigate_current_level 
+                       if SolverOptions.CLAUSE_LEARNING in self.options 
+                       else self._investigate_decision_var)
+        investigate(trail, current_level_vars, lower_level_vars, all_vars, decision_level)
 
-        uip = current_level_literals.pop()
-        learned_clause = [-uip] + [-literal for literal, _ in previous_level_literals]
-        new_decision_level = max((level for _, level in previous_level_literals), default=0)
+        pivot = current_level_vars.pop()
+        derived_clause = [-pivot, *(-var for var, _ in lower_level_vars)]
+        backtrack_level = max((level for _, level in lower_level_vars), default=0)
 
         if SolverOptions.VSIDS in self.options:
-            self.decision_heuristic.update_scores(assignments, all_literals)
+            self.decision_heuristic.update_scores(trail, all_vars)
 
         self.learned_clauses += 1
-        self.max_length_learned_clause = max(self.max_length_learned_clause, len(learned_clause))
-        return learned_clause, new_decision_level
+        self.max_length_learned_clause = max(self.max_length_learned_clause, len(derived_clause))
+        return derived_clause, backtrack_level
 
-    def _analyze_current_level(self, assignments: 'Assignments', current_level_literals: Set[int], 
-                               previous_level_literals: Set[Tuple[int, int]], all_literals: Set[int], decision_level: int):
-        """Analyze the current decision level for 1UIP."""
-        for literal in reversed(assignments.assignment_history):
-            if len(current_level_literals) == 1:
+    def _investigate_current_level(self, trail: Trail, current_level_vars: Set[int], 
+                                   lower_level_vars: Set[Tuple[int, int]], all_vars: Set[int], decision_level: int) -> None:
+        """Investigate the current decision level for unique implication point."""
+        for var in reversed(trail.trail_history):
+            if len(current_level_vars) == 1:
                 break
-            if literal not in current_level_literals:
+            if var not in current_level_vars:
                 continue
-            parents = assignments.get_assignment(literal).parents
-            for parent in parents:
-                level = assignments.get_assignment(parent).decision_level
+            antecedents = trail.get_assignment(var).parents
+            for antecedent in antecedents:
+                level = trail.get_assignment(antecedent).decision_level
                 if level == decision_level:
-                    current_level_literals.add(parent)
+                    current_level_vars.add(antecedent)
                 else:
-                    previous_level_literals.add((parent, level))
-                all_literals.add(parent)
-            current_level_literals.remove(literal)
+                    lower_level_vars.add((antecedent, level))
+                all_vars.add(antecedent)
+            current_level_vars.remove(var)
 
-    def _analyze_decision_literal(self, assignments: 'Assignments', current_level_literals: Set[int], 
-                                  previous_level_literals: Set[Tuple[int, int]], all_literals: Set[int], decision_level: int):
-        """Analyze the decision literal for conflict resolution."""
-        previous = None
-        for literal in reversed(assignments.assignment_history):
-            if assignments.get_assignment(literal).decision_level != decision_level:
+    def _investigate_decision_var(self, trail: Trail, current_level_vars: Set[int], 
+                                  lower_level_vars: Set[Tuple[int, int]], all_vars: Set[int], decision_level: int) -> None:
+        """Investigate the decision variable for conflict resolution."""
+        last_var: Optional[int] = None
+        for var in reversed(trail.trail_history):
+            if trail.get_assignment(var).decision_level != decision_level:
                 break
-            if literal not in current_level_literals:
+            if var not in current_level_vars:
                 continue
-            parents = assignments.get_assignment(literal).parents
-            for parent in parents:
-                level = assignments.get_assignment(parent).decision_level
-                if level == decision_level:
-                    current_level_literals.add(parent)
+            antecedents = trail.get_assignment(var).parents
+            for antecedent in antecedents:
+                assign = trail.get_assignment(antecedent)
+                if assign.decision_level == decision_level:
+                    current_level_vars.add(antecedent)
                 else:
-                    previous_level_literals.add((parent, level))
-                all_literals.add(parent)
-            current_level_literals.remove(literal)
-            previous = literal
-        if previous is not None:
-            current_level_literals.add(previous)
+                    lower_level_vars.add((antecedent, assign.decision_level))
+                all_vars.add(antecedent)
+            current_level_vars.remove(var)
+            last_var = var
+        if last_var is not None:
+            current_level_vars.add(last_var)
 
     @lru_cache(maxsize=1024)
     def luby(self, i: int) -> int:
@@ -215,24 +214,33 @@ class CDCLSolver:
             return 2**(k-1)
         return self.luby(i - 2**(k-1) + 1)
 
-    def deleteClause(self, cnf: List[List[int]], assignments: 'Assignments', lbd: List[float], i: int) -> None:
-        """Delete a clause from the CNF, update watched literals and LBD values."""
+    def deleteClause(self, cnf: List[List[int]], trail: Trail, lbd: List[float], i: int) -> None:
+        """Remove a constraint from the formula and update related data structures."""
         self.deleted_clauses += 1
 
-        clause_to_delete = cnf[i]
-        for literal in clause_to_delete[:2]:
-            assignments.get_assignment(literal).discard_watched_clause(i, literal)
+        target_constraint = cnf[i]
+        for var in target_constraint[:2]:
+            trail.get_assignment(var).discard_watched_clause(i, var)
 
-        if i < len(cnf) - 1:
-            cnf[i], cnf[-1] = cnf[-1], cnf[i]
-            lbd[i], lbd[-1] = lbd[-1], lbd[i]
-            for literal in cnf[i][:2]:
-                assignments.get_assignment(literal).replace_watched_clause(len(cnf) - 1, i, literal)
+        if i != len(cnf) - 1:
+            self._swap_and_update(cnf, lbd, trail, i)
 
         cnf.pop()
         lbd.pop()
 
-    def apply_restart_policy(self, assignments: 'Assignments', cnf: List[List[int]], lbd: List[float], oldLength: int, decision_level: int) -> int:
+    def _swap_and_update(self, cnf: List[List[int]], lbd: List[float], trail: Trail, index: int) -> None:
+        """Swap the constraint to be deleted with the last one and update watches."""
+        last_index = len(cnf) - 1
+
+        # Swap constraints and LBD values
+        cnf[index], cnf[last_index] = cnf[last_index], cnf[index]
+        lbd[index], lbd[last_index] = lbd[last_index], lbd[index]
+
+        # Update watched literals
+        for var in cnf[index][:2]:
+            trail.get_assignment(var).replace_watched_clause(last_index, index, var)
+
+    def apply_restart_policy(self, trail: Trail, cnf: List[List[int]], lbd: List[float], oldLength: int, decision_level: int) -> int:
         """Apply the restart policy to the SAT solver."""
         if not SolverOptions.RESTARTS in self.options:
             return decision_level
@@ -242,13 +250,13 @@ class CDCLSolver:
         if conflicts_since_last_restart > self.luby_num * self.luby(self.restarts + 1):
             self.restarts += 1
             self.old_conflicts = self.conflicts
-            self.backtrack(assignments, 0)
+            self.backtrack(trail, 0)
             
             if SolverOptions.CLAUSE_DELETION in self.options:
                 i = len(cnf) - 1
                 while i >= oldLength:
                     if lbd[i] > self.lbdLimit:
-                        self.deleteClause(cnf, assignments, lbd, i)
+                        self.deleteClause(cnf, trail, lbd, i)
                     i -= 1
                 self.lbdLimit *= self.lbdFactor
 
@@ -256,81 +264,67 @@ class CDCLSolver:
 
         return decision_level
 
-    def backtrack(self, assignments: Assignments, decision_level: int) -> None:
+    def backtrack(self, trail: Trail, decision_level: int) -> None:
         """Backtrack to a specified decision level by unassigning literals."""
-        if not assignments.assignment_history:
+        if not trail.trail_history:
             return
 
-        literals_to_keep = 0
-        for reverse_index, literal in enumerate(reversed(assignments.assignment_history)):
-            level = assignments.get_assignment(literal).decision_level
-            if level <= decision_level:
-                literals_to_keep = len(assignments.assignment_history) - reverse_index
-                break
+        cutoff_index = self._find_cutoff_point(trail, decision_level)
 
-        for literal in assignments.assignment_history[literals_to_keep:]:
-            assignments.get_assignment(literal).is_assigned = False
+        for literal in trail.trail_history[cutoff_index:]:
+            trail.get_assignment(literal).is_assigned = False
 
-        assignments.assignment_history = assignments.assignment_history[:literals_to_keep]
+        trail.trail_history = trail.trail_history[:cutoff_index]
         
-    def sort_learned_clause(self, learned_clause: List[int], assignments: Assignments) -> None:
-        """Sorts the learned clause to ensure correct watched literals for backtracking."""
-        for i, literal in enumerate(learned_clause):
-            if not assignments.get_assignment(literal).is_assigned:
-                learned_clause[0], learned_clause[i] = learned_clause[i], learned_clause[0]
-                break
-
-        history_indices = {-x: i for i, x in enumerate(assignments.assignment_history)}
-
-        learned_clause[1:] = sorted(
-            learned_clause[1:],
-            key=lambda x: history_indices.get(-x, float('-inf')),
-            reverse=True
-        )
+        
+    def _find_cutoff_point(self, trail: Trail, target_level: int) -> int:
+        """Determine the index where trail should be cut off."""
+        for idx, literal in enumerate(trail.trail_history[::-1]):
+            if trail.get_assignment(literal).decision_level <= target_level:
+                return len(trail.trail_history) - idx
+        return 0
 
     @lru_cache(maxsize=1024)
     def check_parents_in_clause(self, parents: tuple, clause_set: frozenset) -> bool:
         """Check if all parents of a literal are in the clause."""
         return all(-parent in clause_set for parent in parents)
 
-    def minimize_learned_clause(self, learned_clause: List[int], assignments: Assignments) -> None:
-        """Minimizes the learned clause by removing redundant literals."""
-        if not SolverOptions.CLAUSE_MINIMIZATION in self.options:
-            return
-
+    def minimize_learned_clause(self, learned_clause: List[int], trail: Trail) -> None:
+        """Refines the conflict-induced clause by pruning redundant literals."""
         self.minimalizations += 1
 
-        learned_clause_set = frozenset(learned_clause)
-        to_remove = []
+        clause_literals = set(learned_clause)
+        simplified_clause = [learned_clause[0]]  # Keep the first literal
 
-        for literal in learned_clause[1:]:
-            parents = tuple(assignments.get_assignment(literal).parents)
-            if parents and self.check_parents_in_clause(parents, learned_clause_set):
-                to_remove.append(literal)
+        for lit in learned_clause[1:]:
+            assignment = trail.get_assignment(lit)
+            if not assignment.parents or any(-p not in clause_literals and p not in clause_literals for p in assignment.parents):
+                simplified_clause.append(lit)
 
-        for literal in to_remove:
-            learned_clause.remove(literal)
+        learned_clause[:] = simplified_clause  # In-place update of learned_clause
 
-    def learn_new_clause(self, cnf: List[List[int]], assignments: Assignments, lbd: List[float], learned_clause: List[int], decision_level: int, proof_cnf: List[List[int]]) -> None:
-        """Learns a new clause, adds it to the CNF, and performs necessary updates."""
+    def learn_new_clause(self, cnf: List[List[int]], trail: Trail, lbd: List[float], learned_clause: List[int], decision_level: int, proof_cnf: List[List[int]]) -> None:
+        """Integrates a newly derived clause into the formula and updates related data structures."""
         self.learned_clauses += 1
 
-        self.sort_learned_clause(learned_clause, assignments)
-        self.minimize_learned_clause(learned_clause, assignments)
+        if SolverOptions.CLAUSE_MINIMIZATION in self.options:
+            self.minimize_learned_clause(learned_clause, trail)
 
         cnf.append(learned_clause)
         proof_cnf.append(learned_clause)
 
         self.unit_propagations += 1
 
-        clause_index = len(cnf) - 1
-        for literal in learned_clause[:2]:
-            assignments.get_assignment(literal).append_watched_clause(clause_index, literal)
+        new_clause_index = len(cnf) - 1
+        for lit in learned_clause[:2]:
+            trail.get_assignment(lit).append_watched_clause(new_clause_index, lit)
 
-        unique_decision_levels = set(assignments.get_assignment(literal).decision_level for literal in learned_clause)
-        lbd.append(len(unique_decision_levels))
+        level_set = set()
+        for lit in learned_clause:
+            level_set.add(trail.get_assignment(lit).decision_level)
+        lbd.append(len(level_set))
 
-        assignments.set_literal(learned_clause[0], decision_level, learned_clause)
+        trail.set_literal(learned_clause[0], decision_level, learned_clause)
         
     @staticmethod
     def sign(x):
@@ -356,18 +350,18 @@ class CDCLSolver:
         num_literals = self.get_count(cnf)
         proof_cnf = cnf.copy()
     
-        # Initialize assignments and LBD list
-        assignments = Assignments(num_literals, cnf)
+        # Initialize trail and LBD list
+        trail = Trail(num_literals, cnf)
         lbd: List[float] = [0] * original_cnf_size
         decision_level = 0
     
-        while len(assignments.assignment_history) < num_literals:
+        while len(trail.trail_history) < num_literals:
             # Perform a decision
             decision_level += 1
-            self.decide(assignments, decision_level)
+            self.decide(trail, decision_level)
     
             # Propagate the implications
-            conflict_clause = self.propagate(cnf, assignments, decision_level)
+            conflict_clause = self.propagate(cnf, trail, decision_level)
     
             # Handle conflicts
             while conflict_clause is not None:
@@ -376,18 +370,18 @@ class CDCLSolver:
                     return False, proof_cnf[original_cnf_size:] + [[]]
     
                 # Analyze the conflict and learn a new clause
-                learned_clause, decision_level = self.analyzeConflict(assignments, conflict_clause, decision_level)
-                self.backtrack(assignments, decision_level)
-                self.learn_new_clause(cnf, assignments, lbd, learned_clause, decision_level, proof_cnf)
+                learned_clause, decision_level = self.analyze_conflict(trail, conflict_clause, decision_level)
+                self.backtrack(trail, decision_level)
+                self.learn_new_clause(cnf, trail, lbd, learned_clause, decision_level, proof_cnf)
     
                 # Continue propagation after learning a new clause
-                conflict_clause = self.propagate(cnf, assignments, decision_level)
+                conflict_clause = self.propagate(cnf, trail, decision_level)
     
             # Apply the restart policy if necessary
-            decision_level = self.apply_restart_policy(assignments, cnf, lbd, original_cnf_size, decision_level)
+            decision_level = self.apply_restart_policy(trail, cnf, lbd, original_cnf_size, decision_level)
     
         # If no conflicts are found, the CNF is satisfiable
-        return True, assignments.assignment_history
+        return True, trail.trail_history
 
     def read_cnf(self, filename: str) -> List[List[int]]:
         """
@@ -454,13 +448,13 @@ if __name__ == "__main__":
 
     stat_time_start = time.time()
     cnf = solver.read_cnf(args.input)
-    sat, assignments = solver.CDCL(cnf)
+    sat, trail = solver.CDCL(cnf)
     stat_time_end = time.time()
     stat_peak_memory_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
     
     if not sat:
         with open("unsat.drat", "w") as f:
-            for clause in assignments:
+            for clause in trail:
                 f.write(" ".join(map(str, clause)) + " 0" + "\n")
 
     print("s", "SATISFIABLE" if sat else "UNSATISFIABLE")

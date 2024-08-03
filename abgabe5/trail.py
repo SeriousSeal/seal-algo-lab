@@ -22,15 +22,11 @@ class Assignment:
     watched_neg_literals: List[int] = field(default_factory=list)
 
     def __post_init__(self):
+        # Set the polarity as the negation of the literal
         self.polarity = -self.literal
-
-    def retrieve_watched_clauses(self, polarity: Literal) -> List[int]:
-        return self.watched_literals if polarity > 0 else self.watched_neg_literals
-
-    def append_watched_clause(self, clause_index: int, polarity: Literal) -> None:
-        self.retrieve_watched_clauses(polarity).append(clause_index)
-
+        
     def modify_watched_clauses(self, operation: str, *args):
+        # Helper method to modify watched clauses based on the operation
         attribute = 'watched_literals' if args[0] > 0 else 'watched_neg_literals'
         current_list = getattr(self, attribute)
         
@@ -43,36 +39,56 @@ class Assignment:
         setattr(self, attribute, new_list)
 
     def discard_watched_clause(self, clause_index: int, polarity: Literal) -> None:
+        # Remove a watched clause from the appropriate list
         self.modify_watched_clauses('discard', polarity, clause_index)
 
     def replace_watched_clause(self, old_index: int, new_index: int, polarity: Literal) -> None:
+        # Replace a watched clause with a new one in the appropriate list
         self.modify_watched_clauses('replace', polarity, old_index, new_index)
 
+    def retrieve_watched_clauses(self, polarity: Literal) -> List[int]:
+        # Return the appropriate list of watched clauses based on polarity
+        return self.watched_literals if polarity > 0 else self.watched_neg_literals
+
+    def append_watched_clause(self, clause_index: int, polarity: Literal) -> None:
+        # Add a new watched clause to the appropriate list
+        self.retrieve_watched_clauses(polarity).append(clause_index)
+
 @dataclass
-class Assignments:
+class Trail:
     num_literals: int
     cnf: CNF
-    assignment_history: List[Literal] = field(default_factory=list)
-    assignments: List[Assignment] = field(init=False)
+    trail_history: List[Literal] = field(default_factory=list)
+    trail: List[Assignment] = field(init=False)
 
     def __post_init__(self):
-        self.assignments = [Assignment(i + 1) for i in range(self.num_literals)]
+        # Initialize assignments for all literals
+        self.trail = [Assignment(i + 1) for i in range(self.num_literals)]
         
+        # Set up initial watched literals for each clause
         for i, clause in enumerate(self.cnf):
             for j in range(min(2, len(clause))):
                 self.get_assignment(clause[j]).append_watched_clause(i, clause[j])
-
-    def get_assignment(self, literal: Literal) -> Assignment:
-        return self.assignments[abs(literal) - 1]
-
+                
     def __contains__(self, literal: Literal) -> bool:
+        # Check if a literal is currently assigned with the given polarity
         assignment = self.get_assignment(literal)
         return assignment.is_assigned and assignment.polarity == literal
-
+                
     def set_literal(self, literal: Literal, level: DecisionLevel, implying_clause: Clause) -> None:
+        # Assign a literal at a given decision level
         assignment = self.get_assignment(literal)
         assignment.is_assigned = True
         assignment.polarity = literal
         assignment.decision_level = level
+        # Set the parents (reasons) for this assignment
         assignment.parents = [-lit for lit in implying_clause if lit != literal]
-        self.assignment_history.append(literal)
+        # Add this assignment to the history
+        self.trail_history.append(literal)
+
+    def get_assignment(self, literal: Literal) -> Assignment:
+        # Retrieve the Assignment object for a given literal
+        return self.trail[abs(literal) - 1]
+
+
+

@@ -4,79 +4,77 @@ import time
 import resource
 
 class DPLL_Solver:
-    def __init__(self, flagPureLiteralElimination):
-        self.flagPureLiteralElimination = flagPureLiteralElimination
-        self.unit_propagations = 0
-        self.decisions = 0
-        self.pure_literal_eliminations = 0
-
-    def unit_propagation(self, cnf, assignment):
+    def __init__(self, enable_pure_literal_elimination):
+        self.enable_pure_literal_elimination = enable_pure_literal_elimination
+        self.unit_propagation_count = 0
+        self.decision_count = 0
+        self.pure_literal_elimination_count = 0
+        
+    def unit_propagation(self, cnf, assigned_literals):
         """
-        Performs unit propagation on the given CNF formula and assignment.
-        It iterates through each clause and checks if there is only one unassigned literal.
-        If so, it assigns that literal to the assignment set and increments the unit_propagations counter.
+        Simplifies the given CNF formula based on current variable assignments.
+        Identifies unit clauses and updates the assignments accordingly.
         """
-        for clause in cnf:  
-            unassigned_literal = None
-            num_unassigned = 0
+        for clause in cnf:
+            unresolved_literals = set()
+            sole_unassigned_literal = None
 
             for literal in clause:
-                if literal in assignment:
-                    num_unassigned = 0
+                if literal in assigned_literals:
+                    unresolved_literals.clear()
                     break
-                if -literal in assignment:
+                if -literal in assigned_literals:
                     continue
                 
-                unassigned_literal = literal
-                num_unassigned += 1
-        
-            if num_unassigned == 1:
-                assignment.add(unassigned_literal)
-                self.unit_propagations += 1
-                continue
-    
-        return assignment
+                unresolved_literals.add(literal)
+                sole_unassigned_literal = literal
 
-    def pure_literal_elimination(self, cnf, assignment):
+            if len(unresolved_literals) == 1:
+                assigned_literals.add(sole_unassigned_literal)
+                self.unit_propagation_count += 1
+
+        return assigned_literals
+        
+    def pure_literal_elimination(self, cnf, assigned_literals):
         """
         Performs pure literal elimination on the given CNF formula and assignment.
         It first collects all literals and their negations in the formula.
         Then, it checks if a literal and its negation are both not present in the assignment.
-        If so, it adds the pure literal to the assignment and increments the pure_literal_eliminations counter.
+        If so, it adds the pure literal to the assignment and increments the pure_literal_elimination_count.
         """
-        if not self.flagPureLiteralElimination:
+        if not self.enable_pure_literal_elimination:
             return
-        literals = set()
+        all_literals = set()
         literal_negations = {}
     
         # Collect all literals and their negations
         for clause in cnf:
-            if not any(literal in assignment for literal in clause):
+            if not any(literal in assigned_literals for literal in clause):
                 for literal in clause:
-                    literals.add(literal)
+                    all_literals.add(literal)
                     literal_negations[literal] = -literal
     
         # Process the literals
-        for literal in literals:
-            if literal_negations[literal] in assignment:
+        for literal in all_literals:
+            if literal_negations[literal] in assigned_literals:
                 continue
-            if literal_negations[literal] not in literals:
-                assignment.add(literal)
-                self.pure_literal_eliminations += 1
+            if literal_negations[literal] not in all_literals:
+                assigned_literals.add(literal)
+                self.pure_literal_elimination_count += 1
     
-        return assignment
+        return assigned_literals
 
-    def get_decision_variable(self, cnf, assignment):
+    def get_decision_variable(self, cnf, assigned_literals):
         """
         Selects the next decision variable for the DPLL algorithm.
-        It keeps track of the number of decisions made using the decisions counter.
+        It keeps track of the number of decisions made using the decision_count.
         """
-        self.decisions += 1
+        self.decision_count += 1
         all_literals = {literal for clause in cnf for literal in clause}
-        unassigned_literals = all_literals - assignment - {-literal for literal in assignment}
+        unassigned_literals = all_literals - assigned_literals - {-literal for literal in assigned_literals}
         return next(iter(unassigned_literals))
 
-    def is_finished(self, cnf, assignment):
+    def is_finished(self, cnf, assigned_literals):
         """
         Checks the current state of the CNF formula and assignment:
         - Returns 1 if the formula is satisfiable
@@ -84,14 +82,14 @@ class DPLL_Solver:
         - Returns 0 if the formula is not yet finished
         """
         for clause in cnf:
-            if all(-literal in assignment for literal in clause):
+            if all(-literal in assigned_literals for literal in clause):
                 return -1 
-            if any(literal in assignment for literal in clause):
+            if any(literal in assigned_literals for literal in clause):
                 continue  
             return 0 
         return 1 
 
-    def DPLL(self, cnf, assignment=set()):
+    def DPLL(self, cnf, assigned_literals=set()):
         """
         Implements the DPLL algorithm to solve the given CNF formula.
         It first performs unit propagation and pure literal elimination until no more can be done.
@@ -99,23 +97,23 @@ class DPLL_Solver:
         If more decisions are needed, it recursively calls the DPLL function with the new assignment.
         """
         while True:
-            before_len = len(assignment)
-            self.pure_literal_elimination(cnf, assignment)
-            self.unit_propagation(cnf, assignment)
-            if len(assignment) == before_len:
+            before_len = len(assigned_literals)
+            self.pure_literal_elimination(cnf, assigned_literals)
+            self.unit_propagation(cnf, assigned_literals)
+            if len(assigned_literals) == before_len:
                 break  
         
-        finished = self.is_finished(cnf, assignment)
+        finished = self.is_finished(cnf, assigned_literals)
         if finished == 1:
-            return True, assignment
+            return True, assigned_literals
         elif finished == -1:
             return False, None
         
-        x = self.get_decision_variable(cnf, assignment)
-        res_neg = self.DPLL(cnf, assignment | {-x})  
-        if res_neg[0]:
-            return res_neg
-        return self.DPLL(cnf, assignment | {x}) 
+        decision_var = self.get_decision_variable(cnf, assigned_literals)
+        result_negative = self.DPLL(cnf, assigned_literals | {-decision_var})  
+        if result_negative[0]:
+            return result_negative
+        return self.DPLL(cnf, assigned_literals | {decision_var}) 
     
     def read_cnf(self, filename: str) -> set[frozenset[int]]:
         """
@@ -146,21 +144,21 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     solver = DPLL_Solver(args.pure)
-    statTimeStart = time.time()
+    start_time = time.time()
     cnf = solver.read_cnf(args.input)
-    sat, v = solver.DPLL(cnf)
-    statTimeEnd = time.time()
-    peakMemoryMB = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    is_satisfiable, solution = solver.DPLL(cnf)
+    end_time = time.time()
+    peak_memory_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
 
     # Print results
-    print("s", "SATISFIABLE" if sat else "UNSATISFIABLE")
+    print("s", "SATISFIABLE" if is_satisfiable else "UNSATISFIABLE")
 
     # Print statistics
-    print ("c Time:", statTimeEnd - statTimeStart)
-    print("c Peak Memory (MB):", peakMemoryMB)
-    print("c v:", sorted(v) if v is not None else v)
-    print("c Number of Unit Propagations:", solver.unit_propagations)
-    print("c Number of Decisions:", solver.decisions)
-    print("c Number of Pure Literal Eliminations:", solver.pure_literal_eliminations)
+    print("c Time:", end_time - start_time)
+    print("c Peak Memory (MB):", peak_memory_mb)
+    print("c Solution:", sorted(solution) if solution is not None else solution)
+    print("c Number of Unit Propagations:", solver.unit_propagation_count)
+    print("c Number of Decisions:", solver.decision_count)
+    print("c Number of Pure Literal Eliminations:", solver.pure_literal_elimination_count)
 
-    exit(10 if sat else 20)
+    exit(10 if is_satisfiable else 20)
